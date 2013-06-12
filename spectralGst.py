@@ -16,17 +16,19 @@ class WaveformWidget(Clutter.Actor):
     def __init__(self, peaks):
         Clutter.Actor.__init__(self)
         self.set_size(700, 100)
+        self.offset = 0
 
         self.peaks = peaks
 
-        self.createNumpyArray()
 
         Clutter.Actor.__init__(self)
         self.set_content_scaling_filters(Clutter.ScalingFilter.NEAREST, Clutter.ScalingFilter.NEAREST)
         self.canvas = Clutter.Canvas()
-        self.canvas.set_size(700, 100)
+        self.canvas.set_size(600, 100)
         self.set_content(self.canvas)
+        self.width = 700
         self.canvas.connect("draw", self.draw_content)
+        self.createNumpyArray()
         self.canvas.invalidate()
 
     # The purpose of this method is to translate our peaks to a numpy array,
@@ -36,46 +38,61 @@ class WaveformWidget(Clutter.Actor):
         n = datetime.now()
         nbSamples = len(self.peaks[0])
 
-        stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, int(self.props.width))
-
         if (len(self.peaks) > 1):
             samples = (numpy.array(self.peaks[0]) + numpy.array(self.peaks[1])) / 2
         else:
             samples = numpy.array(self.peaks[0])
 
-        samplesPerPixel = float(len(self.peaks[0])) / self.props.width
-        pixelsPerSample = self.props.width / float(len(self.peaks[0]))
+        samplesPerPixel = float(len(self.peaks[0])) / self.width
+        pixelsPerSample = self.width / float(len(self.peaks[0]))
 
-        data = numpy.empty((100, int(self.props.width)), dtype = numpy.uint32)
+        data = numpy.empty([int(self.width), 100], numpy.uint32, 'F')
 
         data[:] = 0
 
         accum = 0
         currentPixel = 0.
         samplesInPixel = 0
-        lastThreshHold = 0.0
+        lastThreshHold = 1.0
+        lastAccum = 0
+        lastUsedSample = -1
         l = len(samples)
 
-        data = data.transpose()
+        for j in range(int(self.width)):
+            while (currentPixel < lastThreshHold):
+                currentPixel += pixelsPerSample
 
-        for j in range(int(self.props.width)):
-            currentPixel += samplesPerPixel
-            if (currentPixel >= l):
-                break
-            accum += samples[int(currentPixel)]
-            samplesInPixel += 1
-            if (currentPixel >= lastThreshHold):
+                currentSample = int(currentPixel / pixelsPerSample)
+
+                # Make sure rounding doesn't lead us to use the same sample twice when samples are sparse
+                if currentSample == lastUsedSample:
+                    currentSample += 1
+
+                if currentSample >= l:
+                    break
+
+                lastUsedSample = currentSample
+
+                accum += samples[currentSample]
+
+                samplesInPixel += 1
+
+            if samplesInPixel > 0:
                 accum /= samplesInPixel
-                top = int(abs(50 + accum))
-                bottom = int(abs(accum - 50))
+            else:
+                accum = lastAccum
 
-                lastThreshHold += 1.0
-                samplesInPixel = 0
-                accum = 0
 
-                data[j][bottom:top] = 0xFF2D9FC9
+            top = int(abs(50 + accum))
+            bottom = int(abs(accum - 50))
 
-        self.stride = stride
+            lastAccum = accum
+            lastThreshHold += 1.0
+            samplesInPixel = 0
+            accum = 0
+
+            data[j][bottom:top] = 0xFF2D9FC9
+
         self.nbSamples = nbSamples
         self.pixelsPerSample = pixelsPerSample
 
@@ -84,9 +101,12 @@ class WaveformWidget(Clutter.Actor):
         print "time to create :", datetime.now() - n
 
     def draw_content(self, canvas, cr, surf_w, surf_h):
-        n = datetime.now()
+        data = self.data[self.offset:].flatten('K')
+
+        stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, self.width - self.offset)
+
         self.surface = cairo.ImageSurface.create_for_data(
-                self.data, cairo.FORMAT_ARGB32, int(self.props.width), 100, self.stride)
+                data, cairo.FORMAT_ARGB32, 600, 100, stride)
 
         cr.set_operator(cairo.OPERATOR_CLEAR)
         cr.set_source_surface(self.surface, 0, 0)
@@ -96,14 +116,26 @@ class WaveformWidget(Clutter.Actor):
         cr.set_source_surface(self.surface, 0, 0)
         cr.paint()
 
-        print "time to render :", datetime.now() - n
-
     def _scrollInCb(self, actor, event):
         if event.direction == Clutter.ScrollDirection.UP:
-            self.props.width += 100
+            self.width += 100
         else:
-            self.props.width -= 100
+            self.width -= 100
+
+        print self.width
+
         self.createNumpyArray()
+        self.canvas.invalidate()
+
+    def _scrolledCb(self, actor, event):
+        if event.keyval == 65361:  #left
+            self.offset -= 100
+        else:  #right
+            self.offset += 100
+
+        if self.offset < 0:
+            self.offset = 0
+
         self.canvas.invalidate()
 
 def buildPipeline():
@@ -152,11 +184,12 @@ if __name__ == "__main__":
 
     stage = Clutter.Stage()
 
-    stage.set_size(800, 600)
+    stage.set_size(1500, 600)
 
     widget = WaveformWidget(peaks)
 
     stage.connect("scroll-event", widget._scrollInCb)
+    stage.connect("key-release-event", widget._scrolledCb)
 
     stage.add_child(widget)
     widget.set_position(50, 350)
