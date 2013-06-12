@@ -35,6 +35,7 @@ class WaveformWidget(Clutter.Actor):
     def createNumpyArray(self):
         n = datetime.now()
         nbSamples = len(self.peaks[0])
+
         stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, int(self.props.width))
 
         if (len(self.peaks) > 1):
@@ -45,7 +46,7 @@ class WaveformWidget(Clutter.Actor):
         samplesPerPixel = float(len(self.peaks[0])) / self.props.width
         pixelsPerSample = self.props.width / float(len(self.peaks[0]))
 
-        data = numpy.empty((stride * 100), dtype = numpy.uint32)
+        data = numpy.empty((100, int(self.props.width)), dtype = numpy.uint32)
 
         data[:] = 0
 
@@ -54,6 +55,8 @@ class WaveformWidget(Clutter.Actor):
         samplesInPixel = 0
         lastThreshHold = 0.0
         l = len(samples)
+
+        data = data.transpose()
 
         for j in range(int(self.props.width)):
             currentPixel += samplesPerPixel
@@ -70,10 +73,7 @@ class WaveformWidget(Clutter.Actor):
                 samplesInPixel = 0
                 accum = 0
 
-                for i in range(bottom, top):
-                    data[j + i * int(nbSamples / samplesPerPixel)] = 0xFF2D9FC9
-
-        data = numpy.transpose(data)
+                data[j][bottom:top] = 0xFF2D9FC9
 
         self.stride = stride
         self.nbSamples = nbSamples
