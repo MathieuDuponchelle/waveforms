@@ -10,8 +10,6 @@ import sys
 from gi.repository import Gst
 from gi.repository import GLib
 
-
-
 class WaveformWidget(Clutter.Actor):
     def __init__(self, peaks):
         Clutter.Actor.__init__(self)
@@ -24,7 +22,7 @@ class WaveformWidget(Clutter.Actor):
         Clutter.Actor.__init__(self)
         self.set_content_scaling_filters(Clutter.ScalingFilter.NEAREST, Clutter.ScalingFilter.NEAREST)
         self.canvas = Clutter.Canvas()
-        self.canvas.set_size(600, 100)
+        self.canvas.set_size(700, 100)
         self.set_content(self.canvas)
         self.width = 700
         self.canvas.connect("draw", self.draw_content)
@@ -43,78 +41,45 @@ class WaveformWidget(Clutter.Actor):
         else:
             samples = numpy.array(self.peaks[0])
 
-        samplesPerPixel = float(len(self.peaks[0])) / self.width
-        pixelsPerSample = self.width / float(len(self.peaks[0]))
+        nbSamples = len(samples)
 
-        data = numpy.empty([int(self.width), 100], numpy.uint32, 'F')
+        data = numpy.empty([int(nbSamples), 100], numpy.uint32, 'F')
 
         data[:] = 0
 
-        accum = 0
-        currentPixel = 0.
-        samplesInPixel = 0
-        lastThreshHold = 1.0
-        lastAccum = 0
-        lastUsedSample = -1
-        l = len(samples)
-
-        for j in range(int(self.width)):
-            while (currentPixel < lastThreshHold):
-                currentPixel += pixelsPerSample
-
-                currentSample = int(currentPixel / pixelsPerSample)
-
-                # Make sure rounding doesn't lead us to use the same sample twice when samples are sparse
-                if currentSample == lastUsedSample:
-                    currentSample += 1
-
-                if currentSample >= l:
-                    break
-
-                lastUsedSample = currentSample
-
-                accum += samples[currentSample]
-
-                samplesInPixel += 1
-
-            if samplesInPixel > 0:
-                accum /= samplesInPixel
-            else:
-                accum = lastAccum
-
-
-            top = int(abs(50 + accum))
-            bottom = int(abs(accum - 50))
-
-            lastAccum = accum
-            lastThreshHold += 1.0
-            samplesInPixel = 0
-            accum = 0
-
-            data[j][bottom:top] = 0xFF2D9FC9
-
-        self.nbSamples = nbSamples
-        self.pixelsPerSample = pixelsPerSample
+        for x in range(int(nbSamples)):
+            val = samples[x]
+            top = 50 + val
+            bottom = 50 - val
+            data[x][bottom:top] = 0xFF2D9FC9
 
         self.data = data
+        self.nbSamples = nbSamples
 
         print "time to create :", datetime.now() - n
 
     def draw_content(self, canvas, cr, surf_w, surf_h):
-        data = self.data[self.offset:].flatten('K')
+        n = datetime.now()
+        data = self.data.flatten('F')
 
-        stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, self.width - self.offset)
+        stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, self.nbSamples)
 
         self.surface = cairo.ImageSurface.create_for_data(
-                data, cairo.FORMAT_ARGB32, 600, 100, stride)
+                data, cairo.FORMAT_ARGB32, self.nbSamples, 100, stride)
 
         cr.set_operator(cairo.OPERATOR_CLEAR)
         cr.set_source_surface(self.surface, 0, 0)
         cr.paint()
 
         cr.set_operator(cairo.OPERATOR_OVER)
+        cr.scale(float(self.width) / self.nbSamples, 1.0)
+        cr.translate(self.offset * -1, 0)
         cr.set_source_surface(self.surface, 0, 0)
+        cr.get_source().set_filter(cairo.FILTER_NEAREST)
+
         cr.paint()
+
+        print "time to render :", datetime.now() - n
 
     def _scrollInCb(self, actor, event):
         if event.direction == Clutter.ScrollDirection.UP:
@@ -122,19 +87,20 @@ class WaveformWidget(Clutter.Actor):
         else:
             self.width -= 100
 
-        print self.width
-
-        self.createNumpyArray()
         self.canvas.invalidate()
 
     def _scrolledCb(self, actor, event):
         if event.keyval == 65361:  #left
-            self.offset -= 100
+            self.offset -= 10
         else:  #right
-            self.offset += 100
+            self.offset += 10
 
         if self.offset < 0:
             self.offset = 0
+
+        if self.offset > self.width - 700:
+            self.offset = self.width - 700
+            print "stop !"
 
         self.canvas.invalidate()
 
@@ -196,4 +162,3 @@ if __name__ == "__main__":
     stage.show_all()
     stage.connect("delete-event", _quitCb)
     Clutter.main()
-
