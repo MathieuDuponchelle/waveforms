@@ -7,6 +7,8 @@ from datetime import datetime
 import numpy
 import sys
 
+from renderer import *
+
 from gi.repository import Gst
 from gi.repository import GLib
 
@@ -24,7 +26,7 @@ class WaveformWidget(Clutter.Actor):
         self.canvas = Clutter.Canvas()
         self.canvas.set_size(700, 100)
         self.set_content(self.canvas)
-        self.width = 700
+        self.width = 0
         self.canvas.connect("draw", self.draw_content)
         self.createNumpyArray()
         self.canvas.invalidate()
@@ -55,27 +57,21 @@ class WaveformWidget(Clutter.Actor):
 
         self.data = data
         self.nbSamples = nbSamples
+        self.samples = samples.tolist()
 
         print "time to create :", datetime.now() - n
 
     def draw_content(self, canvas, cr, surf_w, surf_h):
         n = datetime.now()
-        data = self.data.flatten('F')
 
-        stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, self.nbSamples)
-
-        self.surface = cairo.ImageSurface.create_for_data(
-                data, cairo.FORMAT_ARGB32, self.nbSamples, 100, stride)
+        self.surface = fill_surface(self.samples[self.offset:self.nbSamples - self.width + self.offset], 700, 100)
 
         cr.set_operator(cairo.OPERATOR_CLEAR)
         cr.set_source_surface(self.surface, 0, 0)
         cr.paint()
 
         cr.set_operator(cairo.OPERATOR_OVER)
-        cr.scale(float(self.width) / self.nbSamples, 1.0)
-        cr.translate(self.offset * -1, 0)
         cr.set_source_surface(self.surface, 0, 0)
-        cr.get_source().set_filter(cairo.FILTER_NEAREST)
 
         cr.paint()
 
@@ -91,9 +87,9 @@ class WaveformWidget(Clutter.Actor):
 
     def _scrolledCb(self, actor, event):
         if event.keyval == 65361:  #left
-            self.offset -= 10
+            self.offset -= 100
         else:  #right
-            self.offset += 10
+            self.offset += 100
 
         if self.offset < 0:
             self.offset = 0
